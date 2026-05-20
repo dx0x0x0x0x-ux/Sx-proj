@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dx Movies | Premium Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+       <!-- ==================== فيديو الخلفية ==================== -->
+    <video class="video-background" autoplay loop muted playsinline>
+        <source src="https://clip.cafe/videos/on-the-ground-stay-on-the-ground.mp4" type="video/mp4">
+    </video>
+    <div class="overlay"></div>
+
+    <!-- ====================   (HERO) ==================== -->
+    <div id="homeScreen" class="hero-container">
+        
+        <header class="hero-header">
+            <a href="#" class="logo" onclick="showHomeScreen()">Dx Movies</a>
+            <div class="top-menu">
+                <a href="#" onclick="showAuthScreen('signInCard')">Movies</a>
+                <a href="#" onclick="showAuthScreen('signInCard')">TV Shows</a>
+                <a href="#" onclick="showAuthScreen('signInCard')">Others</a>
+            </div>
+            <button class="btn-signin" onclick="showAuthScreen('signInCard')">Sign In</button>
+        </header>
+
+        <div class="main-content">
+            <div class="brand-mini">TRENDING NOW</div>
+            <h1 class="movie-title">Dark Knight </h1>
+            <div class="cta-action">
+                <button class="btn-join" onclick="showAuthScreen('signUpCard')">Watch Now</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ==================== SCREEN 2: AUTH ==================== -->
+    <div id="authScreen" class="auth-container hidden">
+        <video class="video-background" autoplay loop muted playsinline>
+            <source src="https://clip.cafe/videos/on-the-ground-stay-on-the-ground.mp4" type="video/mp4">
+        </video>
+        <div class="overlay"></div>
+        
+        <!-- Back Arrow -->
+        <div class="back-arrow" onclick="showHomeScreen()">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+            <span>Back</span>
+        </div>
+
+        <header class="auth-header">
+            <a href="#" class="logo" onclick="showHomeScreen()">Dx Movies</a>
+        </header>
+
+        <div class="auth-content">
+            <!-- Sign In Card -->
+            <div class="auth-card" id="signInCard">
+                <h2>Sign In</h2>
+                <form onsubmit="handleLogin(event)">
+                    <div class="input-group">
+                        <input type="text" id="loginUsername" placeholder="Username" required minlength="3">
+                        <span class="error-msg" id="loginUsernameError"></span>
+                    </div>
+                    <div class="input-group">
+                        <input type="password" id="loginPassword" placeholder="Password" required minlength="6">
+                        <span class="error-msg" id="loginPasswordError"></span>
+                    </div>
+                    <div id="loginGeneralError" class="general-error"></div>
+                    <button type="submit" class="btn-auth">
+                        <span id="loginBtnText">Sign In</span>
+                    </button>
+                    <div class="auth-options">
+                        <label><input type="checkbox" id="rememberMe"> Remember me</label>
+                      
+                    </div>
+                </form>
+                <div class="auth-switch">
+                    New to Dx Movies? <a href="#" onclick="switchAuthForm('signUpCard')">Sign up now.</a>
+                </div>
+            </div>
+
+            <!-- Sign Up Card -->
+            <div class="auth-card hidden" id="signUpCard">
+                <h2>Sign Up</h2>
+                <form onsubmit="handleRegister(event)">
+                    <div class="input-group">
+                        <input type="text" id="regUsername" placeholder="Username" required minlength="3">
+                        <span class="error-msg" id="regUsernameError"></span>
+                    </div>
+                    <div class="input-group">
+                        <input type="password" id="regPassword" placeholder="Create Password" required minlength="6">
+                        <span class="error-msg" id="regPasswordError"></span>
+                    </div>
+                    <div class="input-group">
+                        <input type="password" id="regConfirmPassword" placeholder="Confirm Password" required minlength="6">
+                        <span class="error-msg" id="regConfirmPasswordError"></span>
+                    </div>
+                    <div id="registerGeneralError" class="general-error"></div>
+                    <button type="submit" class="btn-auth">
+                        <span id="registerBtnText">Register</span>
+                    </button>
+                </form>
+                <div class="auth-switch">
+                    Already have an account? <a href="#" onclick="switchAuthForm('signInCard')">Sign in here.</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== SCREEN 3: DASHBOARD ==================== -->
+    <div id="dashboardScreen" class="dashboard-container hidden">
+        
+        <!-- Header -->
+        <header id="mainHeader" class="dashboard-header">
+            <div class="left-side">
+                <div class="logo" onclick="navigateTo('home')">Dx Movies</div>
+                <ul class="nav-links">
+                    <li><a id="link-home" onclick="navigateTo('home')" class="active">Home</a></li>
+                    <li><a id="link-movies" onclick="navigateTo('movies')">Movies</a></li>
+                    <li><a id="link-shows" onclick="navigateTo('shows')">TV Shows</a></li>
+                    <li><a id="link-uploads" onclick="navigateTo('uploads')">My Uploads</a></li>
+                    <li><a id="link-publish" onclick="navigateTo('publish')" style="color: #E50914; font-weight:600;">+ Upload</a></li>
+                </ul>
+            </div>
+            
+            <div class="right-side">
+                <div class="search-container">
+                    <div class="search-box">
+                        <input type="text" id="globalSearch" placeholder="Search movies, shows..." oninput="handleGlobalSearch(this.value)">
+                        <span class="search-icon">🔍</span>
+                    </div>
+                    <div class="search-dropdown" id="searchDropdown"></div>
+                </div>
+                <span class="welcome-text" id="welcomeText"></span>
+                <img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100" alt="Profile" class="profile-avatar" onclick="navigateTo('profile')">
+                <button class="btn-logout-dash" onclick="handleLogout()">Logout</button>
+            </div>
+        </header>
+
+        <!-- Page: Home -->
+        <div id="page-home" class="page active">
+            <section class="billboard">
+                <div class="billboard-content">
+                    <h1 class="billboard-title">INTERSTELLAR</h1>
+                    <p class="billboard-desc">A team of explorers travel through a wormhole in space in an attempt to ensure humanity's survival.</p>
+                    <button class="btn-play">▶ Watch Now</button>
+                </div>
+            </section>
+
+            <div class="movie-row">
+                <h2 class="row-title">Trending Content</h2>
+                <div class="movies-grid" id="trending-grid"></div>
+            </div>
+            <div class="movie-row">
+                <h2 class="row-title">My Uploaded Content</h2>
+                <div class="movies-grid" id="home-uploads-grid"></div>
+            </div>
+            <div class="movie-row">
+                <h2 class="row-title">Explore Movies</h2>
+                <div class="movies-grid" id="home-movies-grid"></div>
+            </div>
+            <div class="movie-row">
+                <h2 class="row-title">Explore TV Shows</h2>
+                <div class="movies-grid" id="home-shows-grid"></div>
+            </div>
+        </div>
+
+        <!-- Page: Movies -->
+        <div id="page-movies" class="page">
+            <h2 class="page-title">All Movies</h2>
+            <div class="movies-grid" id="all-movies-grid"></div>
+        </div>
+
+        <!-- Page: TV Shows -->
+        <div id="page-shows" class="page">
+            <h2 class="page-title">All TV Shows</h2>
+            <div class="movies-grid" id="all-shows-grid"></div>
+        </div>
+
+        <!-- Page: My Uploads -->
+        <div id="page-uploads" class="page">
+            <h2 class="page-title">My Total Uploads</h2>
+            <div class="movies-grid" id="all-uploads-grid"></div>
+        </div>
+
+        <!-- Page: Details -->
+        <div id="page-details" class="page">
+            <div class="detail-layout">
+                <div class="detail-hero">
+                    <img src="" id="detail-img" class="detail-poster" alt="Poster">
+                    <div class="detail-main-info">
+                        <h1 id="detail-title">Loading...</h1>
+                        <div class="media-meta-strip">
+                            <span class="meta-match" id="detail-match">98% Match</span>
+                            <span id="detail-year">2026</span>
+                            <span class="meta-rating" id="detail-rating">IMDb 8.6</span>
+                            <span class="meta-genre" id="detail-genre">Sci-Fi / Drama</span>
+                        </div>
+                        <p class="detail-full-desc" id="detail-desc">Full description goes here...</p>
+                        <button class="btn-play" id="main-watch-btn">▶ Play Media</button>
+                    </div>
+                </div>
+                <div class="video-player-container" id="playerContainer">
+                    <iframe id="videoPlayer" src="" allowfullscreen></iframe>
+                </div>
+                <div class="seasons-section" id="seasonsSection" style="display: none;">
+                    <h3 style="margin-bottom: 20px; font-size: 20px;">Seasons & Episodes</h3>
+                    <div class="season-tabs">
+                        <button class="season-btn active">Season 1</button>
+                    </div>
+                    <div class="episodes-list" id="episodes-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Page: Publish -->
+        <div id="page-publish" class="page">
+            <h2 class="page-title" style="text-align: center; margin-bottom: 30px;">Upload New Media</h2>
+            <div class="form-card">
+                <form id="uploadForm" onsubmit="handleUploadSubmit(event)">
+                    <div class="form-field">
+                        <label>Media Type</label>
+                        <select id="uploadType" required>
+                            <option value="movie">Movie</option>
+                            <option value="show">TV Show (Series)</option>
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label>Title Name</label>
+                        <input type="text" id="uploadTitle" placeholder="e.g., Inception" required>
+                    </div>
+                    <div class="flex-fields">
+                        <div class="form-field">
+                            <label>IMDb Rating</label>
+                            <input type="text" id="uploadRating" placeholder="e.g., IMDb 8.8">
+                        </div>
+                        <div class="form-field">
+                            <label>Release Year</label>
+                            <input type="number" id="uploadYear" placeholder="2026">
+                        </div>
+                    </div>
+                    
+                    <div class="form-field">
+                        <label>Genre / Category</label>
+                        <div class="custom-dropdown-select" id="genreDropdownSelect" onclick="toggleGenreDropdown(event)">
+                            Select Movie Genres...
+                        </div>
+                        <div class="custom-dropdown-list" id="genreDropdownList">
+                            <div class="dropdown-item"><input type="checkbox" value="Action" onchange="updateGenreText()"> Action</div>
+                            <div class="dropdown-item"><input type="checkbox" value="Drama" onchange="updateGenreText()"> Drama</div>
+                            <div class="dropdown-item"><input type="checkbox" value="Comedy" onchange="updateGenreText()"> Comedy</div>
+                            <div class="dropdown-item"><input type="checkbox" value="Sci-Fi" onchange="updateGenreText()"> Sci-Fi</div>
+                            <div class="dropdown-item"><input type="checkbox" value="Horror" onchange="updateGenreText()"> Horror</div>
+                            <div class="dropdown-item"><input type="checkbox" value="Thriller" onchange="updateGenreText()"> Thriller</div>
+                            <div class="dropdown-item"><input type="checkbox" value="Mystery" onchange="updateGenreText()"> Mystery</div>
+                            <div class="dropdown-item"><input type="checkbox" value="Adventure" onchange="updateGenreText()"> Adventure</div>
+                        </div>
+                    </div>
+
+                    <div class="form-field">
+                        <label>Poster Image URL</label>
+                        <input type="url" id="uploadImg" placeholder="https://images.unsplash.com/..." required>
+                    </div>
+                    <div class="form-field">
+                        <label>Video Stream URL</label>
+                        <input type="url" id="uploadUrl" placeholder="https://www.youtube.com/embed/...">
+                    </div>
+                    <div class="form-field">
+                        <label>Story Description</label>
+                        <textarea id="uploadDesc" rows="4" placeholder="Write a short summary..." required></textarea>
+                    </div>
+                    
+                    <button type="submit" class="btn-update">Publish Media Content</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Page: Profile -->
+        <div id="page-profile" class="page">
+            <h2 class="page-title" style="text-align: center; margin-bottom: 30px;">User Profile Settings</h2>
+            <div class="form-card">
+                <div class="form-field">
+                    <label>User ID</label>
+                    <input type="text" id="profileUserId" readonly style="color: #666; cursor: not-allowed; border-color: #333;">
+                </div>
+                <div class="form-field">
+                    <label>Username</label>
+                    <input type="text" id="profileUsername">
+                </div>
+                <div class="form-field">
+                    <label>Role</label>
+                    <input type="text" id="profileRole" readonly style="color: #666; cursor: not-allowed; border-color: #333;">
+                </div>
+                <div class="form-field">
+                    <label>Account Status</label>
+                    <input type="text" id="profileStatus" readonly style="color: #46d369; cursor: not-allowed; border-color: #333;">
+                </div>
+                
+                <button class="btn-update" onclick="triggerToast('Profile settings saved successfully!')">Save Account Changes</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ==================== EDIT MODAL ==================== -->
+    <div id="editModal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeEditModal()">&times;</span>
+            <h3>✏️ Edit Media</h3>
+            <form id="editMediaForm" onsubmit="handleUpdateMedia(event)">
+                <input type="hidden" id="editMediaId">
+                
+                <div class="form-field">
+                    <label>Title</label>
+                    <input type="text" id="editMediaTitle" required>
+                </div>
+                
+                <div class="flex-fields">
+                    <div class="form-field">
+                        <label>Year</label>
+                        <input type="number" id="editMediaYear">
+                    </div>
+                    <div class="form-field">
+                        <label>Rating</label>
+                        <input type="text" id="editMediaRating">
+                    </div>
+                </div>
+                
+                <div class="form-field">
+                    <label>Genre</label>
+                    <input type="text" id="editMediaGenre">
+                </div>
+                
+                <div class="form-field">
+                    <label>Image URL</label>
+                    <input type="url" id="editMediaImg">
+                </div>
+                
+                <div class="form-field">
+                    <label>Video URL</label>
+                    <input type="url" id="editMediaUrl">
+                </div>
+                
+                <div class="form-field">
+                    <label>Description</label>
+                    <textarea id="editMediaDesc" rows="3"></textarea>
+                </div>
+                
+                <button type="submit" class="btn-update">💾 Save Changes</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast-notification" id="successToast">
+        <div class="toast-icon">✓</div>
+        <span id="toastMessage">Changes saved successfully!</span>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
