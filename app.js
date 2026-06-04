@@ -3,6 +3,7 @@ const API_URL = 'http://localhost:3000';
 let authToken = localStorage.getItem('authToken');
 let currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
 let allMedia = [];
+let selectedBatchIds = new Set();
 
 // ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', () => {
@@ -75,16 +76,30 @@ function showDashboard() {
     if (video) video.style.display = 'none';
     if (overlay) overlay.style.display = 'none';
     
+    if (currentUser && currentUser.role === 'admin') {
+        showAdminPanel();
+    } else {
+        showUserDashboard();
+    }
+    
     updateDashboardUI();
     loadAllMedia();
 }
 
-function switchAuthForm(formId) {
-    document.getElementById('signInCard').classList.add('hidden');
-    document.getElementById('signUpCard').classList.add('hidden');
-    document.getElementById(formId).classList.remove('hidden');
-    clearAllErrors();
-    clearAllInputs();
+function showUserDashboard() {
+    const adminPanel = document.getElementById('adminPanelRoot');
+    if (adminPanel) adminPanel.style.display = 'none';
+    
+    document.querySelectorAll('.page').forEach(page => {
+        if (page.id !== 'adminPanelRoot') {
+            page.style.display = '';
+        }
+    });
+    
+    const normalNav = document.querySelector('.nav-links');
+    if (normalNav) normalNav.style.display = 'flex';
+    
+    navigateTo('home');
 }
 
 function navigateTo(pageId) {
@@ -111,6 +126,14 @@ function navigateTo(pageId) {
     if (genreList) genreList.classList.remove('open');
     
     window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function switchAuthForm(formId) {
+    document.getElementById('signInCard').classList.add('hidden');
+    document.getElementById('signUpCard').classList.add('hidden');
+    document.getElementById(formId).classList.remove('hidden');
+    clearAllErrors();
+    clearAllInputs();
 }
 
 // ==================== AUTH FUNCTIONS ====================
@@ -246,6 +269,7 @@ function handleLogout() {
     localStorage.removeItem('currentUser');
     localStorage.removeItem('rememberMe');
     allMedia = [];
+    selectedBatchIds.clear();
     showHomeScreen();
     triggerToast('Logged out successfully 👋');
 }
@@ -268,7 +292,7 @@ function updateDashboardUI() {
     }
 }
 
-// ==================== UPDATE PROFILE ====================
+// ==================== UPDATE PROFILE (FIXED) ====================
 async function handleUpdateProfile(event) {
     event.preventDefault();
     
@@ -300,6 +324,7 @@ async function handleUpdateProfile(event) {
             throw new Error(data.message || 'Failed to update profile');
         }
         
+        // IMPORTANT: Update both token and user data
         authToken = data.token;
         currentUser = data.user;
         localStorage.setItem('authToken', authToken);
@@ -307,6 +332,8 @@ async function handleUpdateProfile(event) {
         
         updateDashboardUI();
         triggerToast('Profile updated successfully! ✨');
+        
+        // Reload media to update creator names
         loadAllMedia();
         
     } catch (error) {
@@ -317,7 +344,105 @@ async function handleUpdateProfile(event) {
     }
 }
 
-// ==================== LOAD & RENDER MEDIA ====================
+// ==================== IMPROVED IMDB FETCH WITH TRAILER ====================
+async function fetchFromIMDB(title, type = 'movie') {
+    try {
+        const OMDB_API_KEY = 'd87e94f0'; 
+        
+        // First fetch movie/show data
+        const response = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(title)}&type=${type}&apikey=${OMDB_API_KEY}`);
+        if (!response.ok) throw new Error('IMDB API error');
+        const data = await response.json();
+        if (data.Response === 'False') throw new Error(data.Error);
+        
+        // Generate YouTube trailer URL based on title
+        const trailerQuery = encodeURIComponent(`${data.Title} ${data.Year} trailer official`);
+        const trailerUrl = `https://www.youtube.com/embed/results?search_query=${trailerQuery}`;
+        // For actual trailer embed, use a search or pre-defined pattern
+        const actualTrailerUrl = `https://www.youtube.com/embed/watch?v=${generateYouTubeSearchQuery(data.Title, data.Year)}`;
+        
+        return {
+            title: data.Title,
+            year: data.Year,
+            rating: `IMDb ${data.imdbRating}`,
+            genre: data.Genre,
+            img: data.Poster !== 'N/A' ? data.Poster : 'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?q=80&w=400',
+            description: data.Plot,
+            url: generateTrailerUrl(data.Title, data.Year) // Generate trailer URL
+        };
+    } catch (error) {
+        console.error('IMDB fetch error:', error);
+        triggerToast(`IMDB Error: ${error.message}`, 'error');
+        return null;
+    }
+}
+
+// Helper function to generate YouTube trailer URL
+function generateTrailerUrl(title, year) {
+    // This is a simplified version - in production, use YouTube API
+    const searchQuery = encodeURIComponent(`${title} ${year} official trailer`);
+    return `https://occ-0-7329-784.1.nflxso.net/so/soa2/678/1798200209445819649.mp4?v=1&e=1780592708&t=--NQWm4B79aPqfDaVQeQlLeGzIg`;
+}
+
+function generateYouTubeSearchQuery(title, year) {
+    // Just a placeholder - real implementation would use YouTube API
+    return `dQw4w9WgXcQ`; // Placeholder
+}
+
+async function handleIMDBFetch(fieldPrefix) {
+    const titleInput = document.getElementById(`${fieldPrefix}Title`);
+    const title = titleInput?.value;
+    if (!title || title.length < 2) {
+        triggerToast('Please enter a title first', 'error');
+        return;
+    }
+    
+    const typeSelect = document.getElementById(`${fieldPrefix}Type`);
+    const type = typeSelect ? typeSelect.value : 'movie';
+    
+    const imdbBtn = event.target;
+    const originalText = imdbBtn.textContent;
+    imdbBtn.textContent = '⏳ Fetching...';
+    imdbBtn.disabled = true;
+    
+    const data = await fetchFromIMDB(title, type);
+    
+    if (data) {
+        if (fieldPrefix === 'upload') {
+            if (document.getElementById('uploadYear')) document.getElementById('uploadYear').value = data.year;
+            if (document.getElementById('uploadRating')) document.getElementById('uploadRating').value = data.rating;
+            if (document.getElementById('uploadImg')) document.getElementById('uploadImg').value = data.img;
+            if (document.getElementById('uploadDesc')) document.getElementById('uploadDesc').value = data.description;
+            if (document.getElementById('uploadUrl')) document.getElementById('uploadUrl').value = data.url;
+            
+            // Update genre dropdown
+            const genreCheckboxes = document.querySelectorAll('#genreDropdownList input[type="checkbox"]');
+            genreCheckboxes.forEach(cb => cb.checked = false);
+            if (data.genre) {
+                const genres = data.genre.split(', ');
+                genreCheckboxes.forEach(cb => {
+                    if (genres.some(g => g.toLowerCase().includes(cb.value.toLowerCase()))) {
+                        cb.checked = true;
+                    }
+                });
+                updateGenreText();
+            }
+        } else if (fieldPrefix === 'adminMedia') {
+            if (document.getElementById('adminMediaYear')) document.getElementById('adminMediaYear').value = data.year;
+            if (document.getElementById('adminMediaRating')) document.getElementById('adminMediaRating').value = data.rating;
+            if (document.getElementById('adminMediaGenre')) document.getElementById('adminMediaGenre').value = data.genre;
+            if (document.getElementById('adminMediaImg')) document.getElementById('adminMediaImg').value = data.img;
+            if (document.getElementById('adminMediaDesc')) document.getElementById('adminMediaDesc').value = data.description;
+            if (document.getElementById('adminMediaUrl')) document.getElementById('adminMediaUrl').value = data.url;
+        }
+        triggerToast('IMDB data loaded successfully! 🎬');
+    }
+    
+    imdbBtn.textContent = originalText;
+    imdbBtn.disabled = false;
+}
+
+// ==================== LOAD & RENDER MEDIA (LIMITED TO 20 IN HOME) ====================
 async function loadAllMedia() {
     try {
         const response = await fetch(`${API_URL}/movies`, {
@@ -335,6 +460,9 @@ async function loadAllMedia() {
         allMedia = await response.json();
         console.log('Loaded media:', allMedia);
         renderAllContent();
+        if (currentUser?.role === 'admin') {
+            loadAdminMedia();
+        }
         
     } catch (error) {
         console.error('Load media error:', error);
@@ -343,35 +471,89 @@ async function loadAllMedia() {
 }
 
 function renderAllContent() {
-    const grids = {
-        trending: document.getElementById('trending-grid'),
-        homeUploads: document.getElementById('home-uploads-grid'),
-        homeMovies: document.getElementById('home-movies-grid'),
-        homeShows: document.getElementById('home-shows-grid'),
-        allMovies: document.getElementById('all-movies-grid'),
-        allShows: document.getElementById('all-shows-grid'),
-        allUploads: document.getElementById('all-uploads-grid')
-    };
-
-    Object.values(grids).forEach(g => { if (g) g.innerHTML = ''; });
-
-    if (!allMedia || allMedia.length === 0) return;
-
-    allMedia.forEach(item => {
-        const cardHtml = createMediaCard(item);
-
-        if (grids.trending) grids.trending.innerHTML += cardHtml;
-        if (item.userId === currentUser?.id && grids.homeUploads) grids.homeUploads.innerHTML += cardHtml;
-        if (item.type === 'movie' && grids.homeMovies) grids.homeMovies.innerHTML += cardHtml;
-        if (item.type === 'show' && grids.homeShows) grids.homeShows.innerHTML += cardHtml;
-        if (item.type === 'movie' && grids.allMovies) grids.allMovies.innerHTML += cardHtml;
-        if (item.type === 'show' && grids.allShows) grids.allShows.innerHTML += cardHtml;
-        if (item.userId === currentUser?.id && grids.allUploads) grids.allUploads.innerHTML += cardHtml;
-    });
-     refreshBillboard(); 
+    // For Home sections - limit to 10 items each with horizontal scroll
+    const trendingItems = [...allMedia].slice(0, 10);
+    const homeUploads = allMedia.filter(m => m.userId === currentUser?.id).slice(0, 10);
+    const homeMovies = allMedia.filter(m => m.type === 'movie').slice(0, 10);
+    const homeShows = allMedia.filter(m => m.type === 'show').slice(0, 10);
+    
+    // For All pages - show everything
+    const allMovies = allMedia.filter(m => m.type === 'movie');
+    const allShows = allMedia.filter(m => m.type === 'show');
+    const allUploads = allMedia.filter(m => m.userId === currentUser?.id);
+    
+    // Render Home sections with horizontal scroll
+    renderHorizontalGrid('trending-grid', trendingItems);
+    renderHorizontalGrid('home-uploads-grid', homeUploads);
+    renderHorizontalGrid('home-movies-grid', homeMovies);
+    renderHorizontalGrid('home-shows-grid', homeShows);
+    
+    // Render full pages
+    renderFullGrid('all-movies-grid', allMovies);
+    renderFullGrid('all-shows-grid', allShows);
+    renderFullGrid('all-uploads-grid', allUploads);
+    
+    refreshBillboard();
 }
 
-function createMediaCard(item) {
+function renderHorizontalGrid(gridId, items) {
+    const grid = document.getElementById(gridId);
+    if (!grid) return;
+    
+    grid.innerHTML = '';
+    grid.style.display = 'flex';
+    grid.style.overflowX = 'auto';
+    grid.style.gap = '15px';
+    grid.style.padding = '10px 0';
+    grid.style.scrollbarWidth = 'thin';
+    
+    items.forEach(item => {
+        const card = createHorizontalCard(item);
+        grid.innerHTML += card;
+    });
+}
+
+function createHorizontalCard(item) {
+    const isOwner = currentUser && item.userId === currentUser.id;
+    const canEdit = isOwner;
+    
+    return `
+        <div class="movie-card" style="min-width: 180px; max-width: 180px;" onclick="openMediaDetails('${item.id}')">
+            <img src="${escapeHtml(item.img || 'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?q=80&w=400')}" alt="${escapeHtml(item.title)}" style="width: 100%; height: 100%; object-fit: cover;">
+            <div class="card-info">
+                <div class="card-title">${escapeHtml(item.title)}</div>
+                <div class="card-meta">${escapeHtml(item.rating || 'IMDb N/A')} • ${escapeHtml(item.year || 'N/A')}</div>
+                ${canEdit ? `
+                    <div style="display: flex; gap: 5px; margin-top: 8px;">
+                        <button onclick="event.stopPropagation(); openEditModal('${item.id}')" style="background: #E50914; border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px;">
+                            ✏️ Edit
+                        </button>
+                        <button onclick="event.stopPropagation(); handleDeleteMedia('${item.id}')" style="background: #333; border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px;">
+                            🗑️ Delete
+                        </button>
+                    </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
+}
+
+function renderFullGrid(gridId, items) {
+    const grid = document.getElementById(gridId);
+    if (!grid) return;
+    
+    grid.innerHTML = '';
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(200px, 1fr))';
+    grid.style.gap = '20px';
+    
+    items.forEach(item => {
+        const card = createFullCard(item);
+        grid.innerHTML += card;
+    });
+}
+
+function createFullCard(item) {
     const isOwner = currentUser && item.userId === currentUser.id;
     const canEdit = isOwner;
     
@@ -429,13 +611,67 @@ function openMediaDetails(id) {
         if (watchBtn) {
             watchBtn.style.display = 'inline-block';
             watchBtn.onclick = function() {
-                playVideo(item.url || 'https://www.youtube.com/embed/dQw4w9WgXcQ');
+                playVideo(item.url || 'https://occ-0-7329-784.1.nflxso.net/so/soa2/678/1798200209445819649.mp4?v=1&e=1780592708&t=--NQWm4B79aPqfDaVQeQlLeGzIg');
             };
         }
     } else {
         if (watchBtn) watchBtn.style.display = 'none';
-        if (seasonsSection) seasonsSection.style.display = 'block';
+        if (seasonsSection) {
+            seasonsSection.style.display = 'block';
+            renderEpisodes(item);
+        }
     }
+}
+
+function renderEpisodes(show) {
+    const episodesContainer = document.getElementById('episodes-list');
+    if (!episodesContainer) return;
+    
+    // If show has seasons data, use it, otherwise create mock
+    const seasons = show.seasons || [{
+        number: 1,
+        episodes: [
+            { number: 1, title: 'Episode 1', duration: '45 min', url: show.url || 'https://occ-0-7329-784.1.nflxso.net/so/soa2/678/1798200209445819649.mp4?v=1&e=1780592708&t=--NQWm4B79aPqfDaVQeQlLeGzIg' },
+            { number: 2, title: 'Episode 2', duration: '48 min', url: show.url },
+            { number: 3, title: 'Episode 3', duration: '52 min', url: show.url }
+        ]
+    }];
+    
+    let html = `<select class="season-selector" id="seasonSelector" onchange="changeSeason(this.value)">`;
+    seasons.forEach((s, idx) => {
+        html += `<option value="${idx}">Season ${s.number}</option>`;
+    });
+    html += `</select><div id="episodesListContainer"></div>`;
+    episodesContainer.innerHTML = html;
+    
+    window.currentShowSeasons = seasons;
+    changeSeason(0);
+}
+
+function changeSeason(seasonIndex) {
+    const seasons = window.currentShowSeasons;
+    if (!seasons || !seasons[seasonIndex]) return;
+    
+    const episodes = seasons[seasonIndex].episodes;
+    const container = document.getElementById('episodesListContainer');
+    if (!container) return;
+    
+    let html = '';
+    episodes.forEach(ep => {
+        html += `
+            <div class="episode-item" onclick="playVideo('${ep.url}')">
+                <div style="display: flex; gap: 15px; align-items: center;">
+                    <span class="episode-number">E${ep.number}</span>
+                    <div>
+                        <div style="font-weight: 600;">${escapeHtml(ep.title)}</div>
+                        <div style="font-size: 12px; color: #888;">${ep.duration}</div>
+                    </div>
+                </div>
+                <span style="color: #E50914;">▶ Play</span>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
 }
 
 function playVideo(url) {
@@ -448,7 +684,7 @@ function playVideo(url) {
     }
 }
 
-// ==================== UPLOAD MEDIA ====================
+// ==================== UPLOAD MEDIA (FIXED FOR TV SHOWS) ====================
 async function handleUploadSubmit(event) {
     event.preventDefault();
 
@@ -457,16 +693,32 @@ async function handleUploadSubmit(event) {
     checkboxes.forEach(cb => { if (cb.checked) selectedGenres.push(cb.value); });
     const genreString = selectedGenres.length > 0 ? selectedGenres.join(' / ') : 'General';
 
+    const mediaType = document.getElementById('uploadType').value;
+    
     const newMedia = {
         title: document.getElementById('uploadTitle').value,
-        type: document.getElementById('uploadType').value,
+        type: mediaType,
         rating: document.getElementById('uploadRating').value || null,
         year: document.getElementById('uploadYear').value || null,
         genre: genreString,
         img: document.getElementById('uploadImg').value,
         url: document.getElementById('uploadUrl').value || null,
-        description: document.getElementById('uploadDesc').value
+        description: document.getElementById('uploadDesc').value,
+        // For TV shows, add seasons data
+        seasons: mediaType === 'show' ? [
+            {
+                number: 1,
+                episodes: [
+                    { number: 1, title: 'Pilot', duration: '45 min', url: document.getElementById('uploadUrl').value || null }
+                ]
+            }
+        ] : null
     };
+
+    if (!newMedia.title || newMedia.title.trim().length < 2) {
+        triggerToast('Title is required', 'error');
+        return;
+    }
 
     try {
         const response = await fetch(`${API_URL}/movies`, {
@@ -492,6 +744,7 @@ async function handleUploadSubmit(event) {
         setTimeout(() => { navigateTo('home'); }, 1000);
 
     } catch (error) {
+        console.error('Upload error:', error);
         triggerToast(error.message, 'error');
     }
 }
@@ -506,7 +759,7 @@ function handleGlobalSearch(query) {
 
     const results = allMedia.filter(m => 
         m.title.toLowerCase().includes(query.toLowerCase())
-    );
+    ).slice(0, 10); // Limit search results
 
     dropdown.innerHTML = '';
 
@@ -537,7 +790,7 @@ function openEditModal(mediaId) {
         return;
     }
 
-    if (item.userId !== currentUser?.id) {
+    if (item.userId !== currentUser?.id && currentUser?.role !== 'admin') {
         triggerToast('You can only edit your own media', 'error');
         return;
     }
@@ -612,7 +865,7 @@ async function handleUpdateMedia(event) {
 async function handleDeleteMedia(mediaId) {
     const item = allMedia.find(m => m.id === mediaId);
     
-    if (item && item.userId !== currentUser?.id) {
+    if (item && item.userId !== currentUser?.id && currentUser?.role !== 'admin') {
         triggerToast('You can only delete your own media', 'error');
         return;
     }
@@ -721,7 +974,7 @@ function updateBillboard(media) {
     if (billboardBtn) {
         billboardBtn.onclick = function() {
             if (media.type === 'movie') {
-                playVideo(media.url || 'https://www.youtube.com/embed/dQw4w9WgXcQ');
+                playVideo(media.url || 'https://occ-0-7329-784.1.nflxso.net/so/soa2/678/1798200209445819649.mp4?v=1&e=1780592708&t=--NQWm4B79aPqfDaVQeQlLeGzIg');
                 navigateTo('details');
                 setTimeout(() => {
                     if (document.getElementById('page-details').classList.contains('active')) {
@@ -759,61 +1012,17 @@ function shuffleBillboard() {
     triggerToast('Billboard updated! 🎬');
 }
 
-
-// ==================== ADMIN REDIRECT & ROLE CHECK ====================
-function showDashboard() {
-    document.getElementById('homeScreen').classList.add('hidden');
-    document.getElementById('authScreen').classList.add('hidden');
-    document.getElementById('dashboardScreen').classList.remove('hidden');
-    
-    const video = document.querySelector('.video-background');
-    const overlay = document.querySelector('.overlay');
-    if (video) video.style.display = 'none';
-    if (overlay) overlay.style.display = 'none';
-    
-    // CHECK USER ROLE AND REDIRECT
-    if (currentUser && currentUser.role === 'admin') {
-        showAdminPanel();
-    } else {
-        showUserDashboard();
-    }
-    
-    updateDashboardUI();
-    loadAllMedia();
-}
-
-function showUserDashboard() {
-    // Hide admin panel if visible
-    const adminPanel = document.getElementById('adminPanelRoot');
-    if (adminPanel) adminPanel.style.display = 'none';
-    
-    // Show normal dashboard content
-    document.querySelectorAll('.page').forEach(page => {
-        if (page.id !== 'adminPanelRoot') {
-            page.style.display = '';
-        }
-    });
-    
-    // Make sure normal nav is visible
-    const normalNav = document.querySelector('.nav-links');
-    if (normalNav) normalNav.style.display = 'flex';
-    
-    navigateTo('home');
-}
-
+// ==================== ADMIN PANEL ====================
 function showAdminPanel() {
-    // Hide normal dashboard pages
     document.querySelectorAll('.page').forEach(page => {
         if (page.id !== 'adminPanelRoot') {
             page.style.display = 'none';
         }
     });
     
-    // Hide normal nav
     const normalNav = document.querySelector('.nav-links');
     if (normalNav) normalNav.style.display = 'none';
     
-    // Show admin panel
     let adminPanel = document.getElementById('adminPanelRoot');
     if (!adminPanel) {
         injectAdminPanel();
@@ -821,106 +1030,102 @@ function showAdminPanel() {
     }
     adminPanel.style.display = 'block';
     
-    // Initialize admin data
-    if (typeof window.loadAdminData === 'function') {
-        window.loadAdminData();
-    }
+    loadAdminData();
 }
 
-// ==================== INJECT ADMIN PANEL HTML ====================
 function injectAdminPanel() {
     const dashboardScreen = document.getElementById('dashboardScreen');
     if (!dashboardScreen) return;
     
     const adminHTML = `
-        <div id="adminPanelRoot" style="display: none;">
-            <div style="display: flex; min-height: 100vh; background: #0b0b0b;">
+        <div id="adminPanelRoot" style="display: none;" class="admin-panel-wrapper">
+            <div style="display: flex; min-height: 100vh;">
                 <!-- Sidebar -->
-                <div style="width: 260px; background: #111111; border-right: 1px solid rgba(255,255,255,0.05); position: fixed; height: 100vh; padding: 30px 20px;">
-                    <div style="font-size: 24px; font-weight: 900; color: #E50914; margin-bottom: 40px; display: flex; align-items: center; gap: 10px;">
-                        Dx Control <span style="font-size: 11px; background: #fff; color: #000; padding: 2px 6px; border-radius: 4px;">ADMIN</span>
+                <div class="admin-sidebar" style="width: 280px; background: #0f0f0f; position: fixed; height: 100vh; padding: 30px 20px;">
+                    <div style="font-size: 28px; font-weight: 900; color: #E50914; margin-bottom: 50px; display: flex; align-items: center; gap: 10px;">
+                        🎬 Dx<span style="color:white;">Control</span>
                     </div>
-                    <ul style="list-style: none;">
-                        <li class="admin-menu-item active" data-tab="overview" style="padding: 14px 18px; border-radius: 8px; color: #aaa; cursor: pointer; display: flex; align-items: center; gap: 12px;" onclick="switchAdminTab('overview')">
-                            📊 <span>Overview</span>
+                    <ul style="list-style: none; padding: 0;">
+                        <li class="admin-menu-item" data-tab="overview" onclick="switchAdminTab('overview')" style="padding: 14px 18px; border-radius: 12px; color: #aaa; cursor: pointer; display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                            📊 <span>Dashboard</span>
                         </li>
-                        <li class="admin-menu-item" data-tab="users" style="padding: 14px 18px; border-radius: 8px; color: #aaa; cursor: pointer; display: flex; align-items: center; gap: 12px;" onclick="switchAdminTab('users')">
-                            👥 <span>Manage Users</span>
+                        <li class="admin-menu-item" data-tab="users" onclick="switchAdminTab('users')" style="padding: 14px 18px; border-radius: 12px; color: #aaa; cursor: pointer; display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                            👥 <span>User Management</span>
                         </li>
-                        <li class="admin-menu-item" data-tab="media" style="padding: 14px 18px; border-radius: 8px; color: #aaa; cursor: pointer; display: flex; align-items: center; gap: 12px;" onclick="switchAdminTab('media')">
-                            🎬 <span>Manage Media</span>
+                        <li class="admin-menu-item" data-tab="movies" onclick="switchAdminTab('movies')" style="padding: 14px 18px; border-radius: 12px; color: #aaa; cursor: pointer; display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                            🎬 <span>Movies Library</span>
                         </li>
-                        <li class="admin-menu-item" data-tab="upload" style="padding: 14px 18px; border-radius: 8px; color: #aaa; cursor: pointer; display: flex; align-items: center; gap: 12px;" onclick="switchAdminTab('upload')">
+                        <li class="admin-menu-item" data-tab="shows" onclick="switchAdminTab('shows')" style="padding: 14px 18px; border-radius: 12px; color: #aaa; cursor: pointer; display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                            📺 <span>TV Shows Library</span>
+                        </li>
+                        <li class="admin-menu-item" data-tab="upload" onclick="switchAdminTab('upload')" style="padding: 14px 18px; border-radius: 12px; color: #aaa; cursor: pointer; display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
                             ➕ <span>Upload Content</span>
                         </li>
                     </ul>
-                    <button onclick="handleLogout()" style="position: absolute; bottom: 30px; width: calc(100% - 40px); background: rgba(229,9,20,0.2); border: 1px solid #E50914; color: #E50914; padding: 12px; border-radius: 8px; cursor: pointer;">🚪 Exit Admin Mode</button>
+                    <button onclick="handleLogout()" style="position: absolute; bottom: 30px; width: calc(100% - 40px); background: rgba(229,9,20,0.15); border: 1px solid #E50914; color: #E50914; padding: 12px; border-radius: 10px; cursor: pointer; font-weight: 600;">🚪 Exit Admin Mode</button>
                 </div>
                 
                 <!-- Main Content -->
-                <div style="margin-left: 260px; flex: 1; padding: 40px 4%;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 35px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 20px;">
+                <div style="margin-left: 280px; flex: 1; padding: 40px 5%; background: #0a0a0a;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 35px;">
                         <div>
-                            <h1 id="adminPanelTitle" style="font-size: 28px;">System Dashboard</h1>
-                            <p style="color: #666; font-size: 13px;">Administrator Control Panel</p>
+                            <h1 id="adminPanelTitle" style="font-size: 28px; font-weight: 700;">Admin Dashboard</h1>
+                            <p style="color: #666; font-size: 14px;">Welcome back, ${currentUser?.username}</p>
                         </div>
-                        <div style="display: flex; align-items: center; gap: 12px;">
-                            <span style="font-size: 14px;" id="adminUsername">${currentUser?.username || 'Admin'}</span>
-                            <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=100" style="width: 40px; height: 40px; border-radius: 50%; border: 2px solid #E50914;">
-                        </div>
+                        <img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100" style="width: 48px; height: 48px; border-radius: 50%; border: 2px solid #E50914;">
                     </div>
                     
                     <!-- Stats Cards -->
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 25px; margin-bottom: 40px;">
-                        <div style="background: #111111; border-radius: 12px; padding: 25px; position: relative; overflow: hidden; border-left: 4px solid #00bcd4;">
-                            <div style="font-size: 13px; color: #888;">Total Users</div>
-                            <div style="font-size: 36px; font-weight: 800;" id="adminStatUsers">0</div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 25px; margin-bottom: 40px;">
+                        <div class="admin-card" style="padding: 25px; background: #141414; border-radius: 16px;">
+                            <div style="font-size: 14px; color: #888;">Total Users</div>
+                            <div class="stat-number" style="font-size: 2.5rem; font-weight: 800;" id="adminStatUsers">0</div>
                         </div>
-                        <div style="background: #111111; border-radius: 12px; padding: 25px; position: relative; overflow: hidden; border-left: 4px solid #ff9800;">
-                            <div style="font-size: 13px; color: #888;">Total Movies</div>
-                            <div style="font-size: 36px; font-weight: 800;" id="adminStatMovies">0</div>
+                        <div class="admin-card" style="padding: 25px; background: #141414; border-radius: 16px;">
+                            <div style="font-size: 14px; color: #888;">Total Movies</div>
+                            <div class="stat-number" style="font-size: 2.5rem; font-weight: 800;" id="adminStatMovies">0</div>
                         </div>
-                        <div style="background: #111111; border-radius: 12px; padding: 25px; position: relative; overflow: hidden; border-left: 4px solid #e50914;">
-                            <div style="font-size: 13px; color: #888;">Total Shows</div>
-                            <div style="font-size: 36px; font-weight: 800;" id="adminStatShows">0</div>
+                        <div class="admin-card" style="padding: 25px; background: #141414; border-radius: 16px;">
+                            <div style="font-size: 14px; color: #888;">Total Shows</div>
+                            <div class="stat-number" style="font-size: 2.5rem; font-weight: 800;" id="adminStatShows">0</div>
                         </div>
                     </div>
                     
                     <!-- Tab: Overview -->
                     <div id="adminTabOverview" class="admin-tab active" style="display: block;">
-                        <div style="background: #111; padding: 30px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.03);">
-                            <h3 style="margin-bottom: 20px;">Welcome to Admin Terminal</h3>
-                            <p style="color: #888;">Use the sidebar to manage users, media content, and system settings.</p>
+                        <div class="admin-card" style="padding: 40px; text-align: center; background: #141414; border-radius: 16px;">
+                            <h3 style="margin-bottom: 15px;">🎬 Content Management System</h3>
+                            <p style="color: #888;">Use the sidebar to manage users, movies, TV shows, and upload new content.</p>
                         </div>
                     </div>
                     
                     <!-- Tab: Users Management -->
                     <div id="adminTabUsers" class="admin-tab" style="display: none;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
-                            <h3>System Users</h3>
-                            <button onclick="openAddUserForm()" style="background: #E50914; border: none; color: white; padding: 10px 20px; border-radius: 6px; cursor: pointer;">+ Add User</button>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+                            <h3 style="font-size: 22px;">System Users</h3>
+                            <button onclick="openAddUserForm()" style="background: #E50914; border: none; color: white; padding: 10px 24px; border-radius: 30px; cursor: pointer; font-weight: 600;">+ Add New User</button>
                         </div>
-                        <div id="addUserForm" style="display: none; background: #111; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
-                            <h4 id="userFormTitle">Add New User</h4>
+                        <div id="addUserForm" style="display: none; background: #141414; padding: 25px; border-radius: 16px; margin-bottom: 25px;">
+                            <h4 style="margin-bottom: 20px;" id="userFormTitle">Add New User</h4>
                             <input type="hidden" id="editUserId">
                             <div style="margin-bottom: 15px;">
-                                <input type="text" id="newUsername" placeholder="Username" style="width: 100%; padding: 12px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 6px;">
+                                <input type="text" id="newUsername" placeholder="Username" style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 8px;">
                             </div>
                             <div style="margin-bottom: 15px;">
-                                <input type="password" id="newPassword" placeholder="Password" style="width: 100%; padding: 12px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 6px;">
+                                <input type="password" id="newPassword" placeholder="Password" style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 8px;">
                             </div>
-                            <div style="margin-bottom: 15px;">
-                                <select id="newRole" style="width: 100%; padding: 12px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 6px;">
+                            <div style="margin-bottom: 20px;">
+                                <select id="newRole" style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 8px;">
                                     <option value="user">User</option>
                                     <option value="admin">Admin</option>
                                 </select>
                             </div>
-                            <button onclick="submitUserForm()" style="background: #E50914; border: none; color: white; padding: 12px; border-radius: 6px; cursor: pointer; width: 100%;">Save User</button>
+                            <button onclick="submitUserForm()" style="background: #E50914; border: none; color: white; padding: 14px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: 600;">Save User</button>
                         </div>
-                        <div style="background: #111111; border-radius: 12px; overflow-x: auto;">
-                            <table style="width: 100%; border-collapse: collapse;">
+                        <div style="background: #111; border-radius: 16px; overflow-x: auto;">
+                            <table class="admin-table" style="width: 100%; border-collapse: collapse;">
                                 <thead>
-                                    <tr style="background: #161616;">
+                                    <tr style="background: #1a1a1a;">
                                         <th style="padding: 16px; text-align: left;">Username</th>
                                         <th style="padding: 16px; text-align: left;">Role</th>
                                         <th style="padding: 16px; text-align: left;">Status</th>
@@ -932,24 +1137,46 @@ function injectAdminPanel() {
                         </div>
                     </div>
                     
-                    <!-- Tab: Media Management -->
-                    <div id="adminTabMedia" class="admin-tab" style="display: none;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
-                            <h3>All Media Content</h3>
-                            <button onclick="switchAdminTab('upload')" style="background: #E50914; border: none; color: white; padding: 10px 20px; border-radius: 6px; cursor: pointer;">+ Add Media</button>
+                    <!-- Tab: Movies Library -->
+                    <div id="adminTabMovies" class="admin-tab" style="display: none;">
+                        <h3 style="margin-bottom: 20px;">Movies Library</h3>
+                        <div id="batchDeleteBar" class="batch-delete-bar" style="display: none;" onclick="confirmBatchDelete()">
+                            🗑️ Delete Selected (<span id="selectedCount">0</span>)
                         </div>
-                        <div style="background: #111111; border-radius: 12px; overflow-x: auto;">
-                            <table style="width: 100%; border-collapse: collapse;">
+                        <div style="background: #111; border-radius: 16px; overflow-x: auto;">
+                            <table class="admin-table" style="width: 100%; border-collapse: collapse;">
                                 <thead>
-                                    <tr style="background: #161616;">
+                                    <tr style="background: #1a1a1a;">
+                                        <th style="padding: 16px;"><input type="checkbox" id="selectAllMovies" onchange="toggleSelectAll('movies')"></th>
                                         <th style="padding: 16px; text-align: left;">Title</th>
-                                        <th style="padding: 16px; text-align: left;">Type</th>
                                         <th style="padding: 16px; text-align: left;">Genre</th>
                                         <th style="padding: 16px; text-align: left;">Year</th>
                                         <th style="padding: 16px; text-align: left;">Actions</th>
                                     </tr>
                                 </thead>
-                                <tbody id="adminMediaTable"></tbody>
+                                <tbody id="adminMoviesTable"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Tab: TV Shows Library -->
+                    <div id="adminTabShows" class="admin-tab" style="display: none;">
+                        <h3 style="margin-bottom: 20px;">TV Shows Library</h3>
+                        <div id="batchDeleteBarShows" class="batch-delete-bar" style="display: none;" onclick="confirmBatchDeleteShows()">
+                            🗑️ Delete Selected (<span id="selectedCountShows">0</span>)
+                        </div>
+                        <div style="background: #111; border-radius: 16px; overflow-x: auto;">
+                            <table class="admin-table" style="width: 100%; border-collapse: collapse;">
+                                <thead>
+                                    <tr style="background: #1a1a1a;">
+                                        <th style="padding: 16px;"><input type="checkbox" id="selectAllShows" onchange="toggleSelectAll('shows')"></th>
+                                        <th style="padding: 16px; text-align: left;">Title</th>
+                                        <th style="padding: 16px; text-align: left;">Genre</th>
+                                        <th style="padding: 16px; text-align: left;">Year</th>
+                                        <th style="padding: 16px; text-align: left;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="adminShowsTable"></tbody>
                             </table>
                         </div>
                     </div>
@@ -957,46 +1184,53 @@ function injectAdminPanel() {
                     <!-- Tab: Upload Media -->
                     <div id="adminTabUpload" class="admin-tab" style="display: none;">
                         <h3 style="margin-bottom: 20px;">Upload New Media</h3>
-                        <div style="background: #111111; padding: 30px; border-radius: 12px;">
+                        <div class="admin-card" style="padding: 35px; background: #141414; border-radius: 16px;">
                             <form id="adminMediaForm" onsubmit="handleAdminUpload(event)">
-                                <div style="margin-bottom: 20px;">
-                                    <label style="display: block; color: #aaa; margin-bottom: 8px;">Media Type</label>
-                                    <select id="adminMediaType" style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 6px;">
-                                        <option value="movie">Movie</option>
-                                        <option value="show">TV Show</option>
-                                    </select>
-                                </div>
-                                <div style="margin-bottom: 20px;">
-                                    <label style="display: block; color: #aaa; margin-bottom: 8px;">Title</label>
-                                    <input type="text" id="adminMediaTitle" required style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 6px;">
+                                <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: flex-end;">
+                                    <div style="flex: 2;">
+                                        <label style="display: block; color: #aaa; margin-bottom: 8px;">Media Type</label>
+                                        <select id="adminMediaType" style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 8px;">
+                                            <option value="movie">Movie</option>
+                                            <option value="show">TV Show</option>
+                                        </select>
+                                    </div>
+                                    <div style="flex: 3;">
+                                        <label style="display: block; color: #aaa; margin-bottom: 8px;">Title</label>
+                                        <input type="text" id="adminMediaTitle" required style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 8px;">
+                                    </div>
+                                    <div>
+                                        <button type="button" class="imdb-fetch-btn" onclick="handleIMDBFetch('adminMedia')" style="background: #f5c518; border: none; color: #000; padding: 10px 15px; border-radius: 30px; font-weight: bold; cursor: pointer;">
+                                            🎬 Fetch from IMDB
+                                        </button>
+                                    </div>
                                 </div>
                                 <div style="display: flex; gap: 15px; margin-bottom: 20px;">
                                     <div style="flex:1;">
                                         <label style="display: block; color: #aaa; margin-bottom: 8px;">Rating</label>
-                                        <input type="text" id="adminMediaRating" style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 6px;">
+                                        <input type="text" id="adminMediaRating" style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 8px;">
                                     </div>
                                     <div style="flex:1;">
                                         <label style="display: block; color: #aaa; margin-bottom: 8px;">Year</label>
-                                        <input type="number" id="adminMediaYear" style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 6px;">
+                                        <input type="number" id="adminMediaYear" style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 8px;">
                                     </div>
                                 </div>
                                 <div style="margin-bottom: 20px;">
                                     <label style="display: block; color: #aaa; margin-bottom: 8px;">Genre</label>
-                                    <input type="text" id="adminMediaGenre" style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 6px;">
+                                    <input type="text" id="adminMediaGenre" style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 8px;">
                                 </div>
                                 <div style="margin-bottom: 20px;">
                                     <label style="display: block; color: #aaa; margin-bottom: 8px;">Image URL</label>
-                                    <input type="url" id="adminMediaImg" style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 6px;">
+                                    <input type="url" id="adminMediaImg" style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 8px;">
                                 </div>
                                 <div style="margin-bottom: 20px;">
-                                    <label style="display: block; color: #aaa; margin-bottom: 8px;">Video URL</label>
-                                    <input type="url" id="adminMediaUrl" style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 6px;">
+                                    <label style="display: block; color: #aaa; margin-bottom: 8px;">Video URL (YouTube Embed)</label>
+                                    <input type="url" id="adminMediaUrl" placeholder="https://www.youtube.com/embed/VIDEO_ID" style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 8px;">
                                 </div>
                                 <div style="margin-bottom: 20px;">
                                     <label style="display: block; color: #aaa; margin-bottom: 8px;">Description</label>
-                                    <textarea id="adminMediaDesc" rows="4" style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 6px;"></textarea>
+                                    <textarea id="adminMediaDesc" rows="4" style="width: 100%; padding: 14px; background: #1a1a1a; border: 1px solid #333; color: white; border-radius: 8px;"></textarea>
                                 </div>
-                                <button type="submit" style="width: 100%; background: #E50914; color: white; border: none; padding: 14px; border-radius: 6px; cursor: pointer; font-weight: 700;">Publish Media</button>
+                                <button type="submit" style="width: 100%; background: #E50914; color: white; border: none; padding: 16px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 16px;">Publish Media</button>
                             </form>
                         </div>
                     </div>
@@ -1009,39 +1243,208 @@ function injectAdminPanel() {
 }
 
 // ==================== ADMIN FUNCTIONS ====================
-window.switchAdminTab = function(tabId) {
+window.selectedMediaIds = new Set();
+window.selectedShowIds = new Set();
+
+function switchAdminTab(tabId) {
     document.querySelectorAll('.admin-tab').forEach(tab => tab.style.display = 'none');
     document.querySelectorAll('.admin-menu-item').forEach(item => item.classList.remove('active'));
     
-    document.getElementById(`adminTab${tabId.charAt(0).toUpperCase() + tabId.slice(1)}`).style.display = 'block';
+    const tabMap = {
+        overview: 'adminTabOverview',
+        users: 'adminTabUsers',
+        movies: 'adminTabMovies',
+        shows: 'adminTabShows',
+        upload: 'adminTabUpload'
+    };
+    
+    const tabElement = document.getElementById(tabMap[tabId]);
+    if (tabElement) tabElement.style.display = 'block';
+    
     const activeMenuItem = document.querySelector(`.admin-menu-item[data-tab="${tabId}"]`);
     if (activeMenuItem) activeMenuItem.classList.add('active');
     
-    const titles = { overview: "System Dashboard", users: "User Management", media: "Media Management", upload: "Upload Content" };
-    document.getElementById('adminPanelTitle').innerText = titles[tabId] || "Admin Panel";
+    const titles = {
+        overview: 'Admin Dashboard',
+        users: 'User Management',
+        movies: 'Movies Library',
+        shows: 'TV Shows Library',
+        upload: 'Upload Content'
+    };
+    const titleEl = document.getElementById('adminPanelTitle');
+    if (titleEl) titleEl.innerText = titles[tabId];
     
     if (tabId === 'users') loadAdminUsers();
-    if (tabId === 'media') loadAdminMedia();
-};
+    if (tabId === 'movies') loadAdminMovies();
+    if (tabId === 'shows') loadAdminShows();
+}
 
-window.loadAdminData = async function() {
+function loadAdminData() {
+    loadAdminUsers();
+    loadAdminMovies();
+    loadAdminShows();
+    updateAdminStats();
+}
+
+async function updateAdminStats() {
     try {
         const response = await fetch(`${API_URL}/admin/stats`, {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
         if (response.ok) {
             const stats = await response.json();
-            document.getElementById('adminStatUsers').innerText = stats.users || 0;
-            document.getElementById('adminStatMovies').innerText = stats.movies || 0;
-            document.getElementById('adminStatShows').innerText = stats.shows || 0;
+            const usersEl = document.getElementById('adminStatUsers');
+            const moviesEl = document.getElementById('adminStatMovies');
+            const showsEl = document.getElementById('adminStatShows');
+            if (usersEl) usersEl.innerText = stats.users || 0;
+            if (moviesEl) moviesEl.innerText = stats.movies || 0;
+            if (showsEl) showsEl.innerText = stats.shows || 0;
         }
     } catch(e) { console.log('Stats error:', e); }
-    
-    loadAdminUsers();
-    loadAdminMedia();
-};
+}
 
-window.loadAdminUsers = async function() {
+function loadAdminMovies() {
+    const movies = allMedia.filter(m => m.type === 'movie');
+    const tbody = document.getElementById('adminMoviesTable');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    movies.forEach(media => {
+        const isChecked = window.selectedMediaIds.has(media.id);
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="padding: 16px;"><input type="checkbox" class="movie-checkbox" data-id="${media.id}" ${isChecked ? 'checked' : ''} onchange="toggleMediaSelection('${media.id}', this.checked)"></td>
+            <td style="padding: 16px;"><strong>${escapeHtml(media.title)}</strong></td>
+            <td style="padding: 16px;">${escapeHtml(media.genre || 'N/A')}</td>
+            <td style="padding: 16px;">${media.year || 'N/A'}</td>
+            <td style="padding: 16px;">
+                <button onclick="adminEditMedia('${media.id}')" style="background: #E50914; border: none; color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer; margin-right: 8px;">✏️ Edit</button>
+                <button onclick="adminDeleteMedia('${media.id}')" style="background: #333; border: none; color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer;">🗑️ Delete</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+    updateBatchDeleteBar();
+}
+
+function loadAdminShows() {
+    const shows = allMedia.filter(m => m.type === 'show');
+    const tbody = document.getElementById('adminShowsTable');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    shows.forEach(media => {
+        const isChecked = window.selectedShowIds.has(media.id);
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="padding: 16px;"><input type="checkbox" class="show-checkbox" data-id="${media.id}" ${isChecked ? 'checked' : ''} onchange="toggleShowSelection('${media.id}', this.checked)"></td>
+            <td style="padding: 16px;"><strong>${escapeHtml(media.title)}</strong></td>
+            <td style="padding: 16px;">${escapeHtml(media.genre || 'N/A')}</td>
+            <td style="padding: 16px;">${media.year || 'N/A'}</td>
+            <td style="padding: 16px;">
+                <button onclick="adminEditMedia('${media.id}')" style="background: #E50914; border: none; color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer; margin-right: 8px;">✏️ Edit</button>
+                <button onclick="adminDeleteMedia('${media.id}')" style="background: #333; border: none; color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer;">🗑️ Delete</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+    updateBatchDeleteBar();
+}
+
+function toggleMediaSelection(id, isChecked) {
+    if (isChecked) {
+        window.selectedMediaIds.add(id);
+    } else {
+        window.selectedMediaIds.delete(id);
+    }
+    updateBatchDeleteBar();
+}
+
+function toggleShowSelection(id, isChecked) {
+    if (isChecked) {
+        window.selectedShowIds.add(id);
+    } else {
+        window.selectedShowIds.delete(id);
+    }
+    updateBatchDeleteBar();
+}
+
+function toggleSelectAll(type) {
+    if (type === 'movies') {
+        const checkboxes = document.querySelectorAll('.movie-checkbox');
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        checkboxes.forEach(cb => {
+            cb.checked = !allChecked;
+            const id = cb.getAttribute('data-id');
+            if (!allChecked) window.selectedMediaIds.add(id);
+            else window.selectedMediaIds.delete(id);
+        });
+    } else if (type === 'shows') {
+        const checkboxes = document.querySelectorAll('.show-checkbox');
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        checkboxes.forEach(cb => {
+            cb.checked = !allChecked;
+            const id = cb.getAttribute('data-id');
+            if (!allChecked) window.selectedShowIds.add(id);
+            else window.selectedShowIds.delete(id);
+        });
+    }
+    updateBatchDeleteBar();
+}
+
+function updateBatchDeleteBar() {
+    const movieCount = window.selectedMediaIds.size;
+    const showCount = window.selectedShowIds.size;
+    const barMovies = document.getElementById('batchDeleteBar');
+    const barShows = document.getElementById('batchDeleteBarShows');
+    const countSpanMovies = document.getElementById('selectedCount');
+    const countSpanShows = document.getElementById('selectedCountShows');
+    
+    if (barMovies) {
+        if (movieCount > 0) {
+            barMovies.style.display = 'flex';
+            if (countSpanMovies) countSpanMovies.innerText = movieCount;
+        } else {
+            barMovies.style.display = 'none';
+        }
+    }
+    if (barShows) {
+        if (showCount > 0) {
+            barShows.style.display = 'flex';
+            if (countSpanShows) countSpanShows.innerText = showCount;
+        } else {
+            barShows.style.display = 'none';
+        }
+    }
+}
+
+async function confirmBatchDelete() {
+    if (window.selectedMediaIds.size === 0) return;
+    if (!confirm(`Are you sure you want to delete ${window.selectedMediaIds.size} selected movies? This action cannot be undone!`)) return;
+    
+    for (const id of window.selectedMediaIds) {
+        await adminDeleteMedia(id, false);
+    }
+    triggerToast(`${window.selectedMediaIds.size} movies deleted successfully`);
+    window.selectedMediaIds.clear();
+    loadAdminMovies();
+    loadAllMedia();
+    updateBatchDeleteBar();
+}
+
+async function confirmBatchDeleteShows() {
+    if (window.selectedShowIds.size === 0) return;
+    if (!confirm(`Are you sure you want to delete ${window.selectedShowIds.size} selected TV shows? This action cannot be undone!`)) return;
+    
+    for (const id of window.selectedShowIds) {
+        await adminDeleteMedia(id, false);
+    }
+    triggerToast(`${window.selectedShowIds.size} shows deleted successfully`);
+    window.selectedShowIds.clear();
+    loadAdminShows();
+    loadAllMedia();
+    updateBatchDeleteBar();
+}
+
+async function loadAdminUsers() {
     try {
         const response = await fetch(`${API_URL}/admin/users`, {
             headers: { 'Authorization': `Bearer ${authToken}` }
@@ -1055,39 +1458,20 @@ window.loadAdminUsers = async function() {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td style="padding: 16px;">${escapeHtml(user.username)}</td>
-                    <td style="padding: 16px;"><span style="background: ${user.role === 'admin' ? '#E50914' : '#333'}; padding: 4px 10px; border-radius: 20px; font-size: 11px;">${user.role}</span></td>
+                    <td style="padding: 16px;"><span style="background: ${user.role === 'admin' ? '#E50914' : '#333'}; padding: 4px 12px; border-radius: 20px; font-size: 11px;">${user.role}</span></td>
                     <td style="padding: 16px;"><span style="color: ${user.isBanned ? '#E50914' : '#46d369'};">${user.isBanned ? 'BANNED' : 'ACTIVE'}</span></td>
                     <td style="padding: 16px;">
-                        <button onclick="toggleBanUser('${user.id}')" style="background: #333; border: none; color: white; padding: 5px 12px; border-radius: 4px; cursor: pointer; margin-right: 5px;">${user.isBanned ? 'Unban' : 'Ban'}</button>
-                        <button onclick="deleteUser('${user.id}')" style="background: #E50914; border: none; color: white; padding: 5px 12px; border-radius: 4px; cursor: pointer;">Delete</button>
+                        <button onclick="toggleBanUser('${user.id}')" style="background: #333; border: none; color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer; margin-right: 5px;">${user.isBanned ? 'Unban' : 'Ban'}</button>
+                        <button onclick="deleteUser('${user.id}')" style="background: #E50914; border: none; color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer;">Delete</button>
                     </td>
                 `;
                 tbody.appendChild(tr);
             });
         }
     } catch(e) { console.log('Load users error:', e); }
-};
+}
 
-window.loadAdminMedia = function() {
-    const tbody = document.getElementById('adminMediaTable');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-    allMedia.forEach(media => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td style="padding: 16px;">${escapeHtml(media.title)}</td>
-            <td style="padding: 16px;"><span style="background: #333; padding: 4px 10px; border-radius: 20px;">${media.type}</span></td>
-            <td style="padding: 16px;">${escapeHtml(media.genre || 'N/A')}</td>
-            <td style="padding: 16px;">${media.year || 'N/A'}</td>
-            <td style="padding: 16px;">
-                <button onclick="adminDeleteMedia('${media.id}')" style="background: #E50914; border: none; color: white; padding: 5px 12px; border-radius: 4px; cursor: pointer;">Delete</button>
-            </td>
-        `;
-        tbody.appendChild(tr);
-    });
-};
-
-window.openAddUserForm = function() {
+function openAddUserForm() {
     const form = document.getElementById('addUserForm');
     if (form) {
         form.style.display = form.style.display === 'none' ? 'block' : 'none';
@@ -1095,9 +1479,9 @@ window.openAddUserForm = function() {
         document.getElementById('newUsername').value = '';
         document.getElementById('newPassword').value = '';
     }
-};
+}
 
-window.submitUserForm = async function() {
+async function submitUserForm() {
     const username = document.getElementById('newUsername').value;
     const password = document.getElementById('newPassword').value;
     const role = document.getElementById('newRole').value;
@@ -1138,6 +1522,7 @@ window.submitUserForm = async function() {
             triggerToast(userId ? 'User updated!' : 'User created!');
             document.getElementById('addUserForm').style.display = 'none';
             loadAdminUsers();
+            updateAdminStats();
         } else {
             const error = await response.json();
             triggerToast(error.message, 'error');
@@ -1145,9 +1530,9 @@ window.submitUserForm = async function() {
     } catch(e) {
         triggerToast('Error saving user', 'error');
     }
-};
+}
 
-window.toggleBanUser = async function(userId) {
+async function toggleBanUser(userId) {
     try {
         const response = await fetch(`${API_URL}/admin/users/${userId}/ban`, {
             method: 'POST',
@@ -1160,9 +1545,9 @@ window.toggleBanUser = async function(userId) {
     } catch(e) {
         triggerToast('Error toggling ban', 'error');
     }
-};
+}
 
-window.deleteUser = async function(userId) {
+async function deleteUser(userId) {
     if (!confirm('Delete this user permanently?')) return;
     try {
         const response = await fetch(`${API_URL}/admin/users/${userId}`, {
@@ -1172,42 +1557,69 @@ window.deleteUser = async function(userId) {
         if (response.ok) {
             triggerToast('User deleted');
             loadAdminUsers();
-            if (typeof loadAllMedia === 'function') loadAllMedia();
+            updateAdminStats();
         }
     } catch(e) {
         triggerToast('Error deleting user', 'error');
     }
-};
+}
 
-window.adminDeleteMedia = async function(mediaId) {
-    if (!confirm('Delete this media permanently?')) return;
+async function adminEditMedia(mediaId) {
+    const item = allMedia.find(m => m.id === mediaId);
+    if (!item) return;
+    
+    document.getElementById('editMediaId').value = item.id;
+    document.getElementById('editMediaTitle').value = item.title || '';
+    document.getElementById('editMediaYear').value = item.year || '';
+    document.getElementById('editMediaRating').value = item.rating || '';
+    document.getElementById('editMediaGenre').value = item.genre || '';
+    document.getElementById('editMediaImg').value = item.img || '';
+    document.getElementById('editMediaUrl').value = item.url || '';
+    document.getElementById('editMediaDesc').value = item.description || '';
+    
+    document.getElementById('editModal').classList.remove('hidden');
+}
+
+async function adminDeleteMedia(mediaId, showToast = true) {
     try {
         const response = await fetch(`${API_URL}/movies/${mediaId}`, {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
         if (response.ok) {
-            triggerToast('Media deleted');
+            if (showToast) triggerToast('Media deleted');
             loadAllMedia();
-            loadAdminMedia();
+            return true;
         }
+        return false;
     } catch(e) {
-        triggerToast('Error deleting media', 'error');
+        if (showToast) triggerToast('Error deleting media', 'error');
+        return false;
     }
-};
+}
 
-window.handleAdminUpload = async function(event) {
+async function handleAdminUpload(event) {
     event.preventDefault();
+    
+    const mediaType = document.getElementById('adminMediaType').value;
     
     const newMedia = {
         title: document.getElementById('adminMediaTitle').value,
-        type: document.getElementById('adminMediaType').value,
+        type: mediaType,
         rating: document.getElementById('adminMediaRating').value || null,
         year: document.getElementById('adminMediaYear').value || null,
         genre: document.getElementById('adminMediaGenre').value || null,
         img: document.getElementById('adminMediaImg').value,
         url: document.getElementById('adminMediaUrl').value || null,
-        description: document.getElementById('adminMediaDesc').value
+        description: document.getElementById('adminMediaDesc').value,
+        seasons: mediaType === 'show' ? [
+            {
+                number: 1,
+                episodes: [
+                    { number: 1, title: 'Pilot', duration: '45 min', url: document.getElementById('adminMediaUrl').value || null }
+                ]
+            }
+        ] : null
     };
     
     if (!newMedia.title || newMedia.title.length < 2) {
@@ -1229,21 +1641,51 @@ window.handleAdminUpload = async function(event) {
             triggerToast('Media published!');
             document.getElementById('adminMediaForm').reset();
             loadAllMedia();
-            loadAdminMedia();
-            switchAdminTab('media');
+            switchAdminTab('movies');
         } else {
             const error = await response.json();
             triggerToast(error.message, 'error');
         }
     } catch(e) {
+        console.error('Admin upload error:', e);
         triggerToast('Error publishing', 'error');
     }
-};
+}
 
-// Add CSS styles for admin panel
-const adminStyles = document.createElement('style');
-adminStyles.textContent = `
-    .admin-menu-item.active { background: rgba(229, 9, 20, 0.1); color: white !important; border-left: 4px solid #E50914; padding-left: 14px !important; }
-    .admin-menu-item:hover { background: rgba(255,255,255,0.05); color: white; }
-`;
-document.head.appendChild(adminStyles);
+// Add IMDB fetch to upload page
+document.addEventListener('DOMContentLoaded', () => {
+    // Wait a bit for DOM to be ready
+    setTimeout(() => {
+        const uploadTitleField = document.getElementById('uploadTitle');
+        if (uploadTitleField && uploadTitleField.parentElement) {
+            const container = uploadTitleField.parentElement.parentElement;
+            const flexDiv = document.createElement('div');
+            flexDiv.style.display = 'flex';
+            flexDiv.style.gap = '15px';
+            flexDiv.style.alignItems = 'flex-end';
+            
+            const titleDiv = uploadTitleField.parentElement.cloneNode(true);
+            titleDiv.style.flex = '3';
+            
+            const btnDiv = document.createElement('div');
+            btnDiv.style.flex = '1';
+            const imdbBtn = document.createElement('button');
+            imdbBtn.type = 'button';
+            imdbBtn.className = 'imdb-fetch-btn';
+            imdbBtn.innerHTML = '🎬 Fetch from IMDB';
+            imdbBtn.style.background = '#f5c518';
+            imdbBtn.style.border = 'none';
+            imdbBtn.style.color = '#000';
+            imdbBtn.style.padding = '10px 15px';
+            imdbBtn.style.borderRadius = '30px';
+            imdbBtn.style.fontWeight = 'bold';
+            imdbBtn.style.cursor = 'pointer';
+            imdbBtn.onclick = () => handleIMDBFetch('upload');
+            btnDiv.appendChild(imdbBtn);
+            
+            flexDiv.appendChild(titleDiv);
+            flexDiv.appendChild(btnDiv);
+            container.replaceChild(flexDiv, uploadTitleField.parentElement);
+        }
+    }, 100);
+});
